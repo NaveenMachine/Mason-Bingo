@@ -1,0 +1,169 @@
+import React, { useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
+import emailjs from 'emailjs-com';
+import './BingoApp.css';
+
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
+
+const ADMINS = ['nrk5727@gmail.com', 'freyhofnolan@gmail.com'];
+
+export default function BingoApp() {
+  const [user, setUser] = useState(null);
+  const [emailInput, setEmailInput] = useState('');
+  const [activeEvents, setActiveEvents] = useState([]);
+  const [selectedEvent, setSelectedEvent] = useState('');
+
+  useEffect(() => {
+    const savedUser = localStorage.getItem('bingo_user');
+    if (savedUser) setUser(JSON.parse(savedUser));
+  }, []);
+
+  const handleJoin = async () => {
+    if (!emailInput) return;
+    const email = emailInput.toLowerCase().trim();
+
+    let { data } = await supabase.from('user_cards').select('*').eq('email', email).single();
+
+    if (!data) {
+      const squares = [
+        "Diddy", "Woke", "I don’t know Jim", "Liberals", "When in Rome",
+        "I’m so drunk right now", "The Drunken Lean", "Drakeeeee",
+        "Money market mutual fund", "Saying IRA", "I’m on alcohol",
+        "Time to morb", "Gulp", "[Reference nobody gets]", "The thing about...",
+        "Walter", "I’m joking", "IT’S GETTING STICKY", "Latina Baddie",
+        "Epstein", "Charlie Kirky", "Les Wexner", "Jimmer", "Aloha"
+      ].sort(() => Math.random() - 0.5);
+
+      squares.splice(12, 0, "FREE SPACE");
+
+      const { data: newCard, error } = await supabase
+        .from('user_cards')
+        .insert([{ email: email, card_layout: squares }])
+        .select()
+        .single();
+
+      if (error) return console.error("Error creating card:", error);
+      data = newCard;
+    }
+
+    setUser(data);
+    localStorage.setItem('bingo_user', JSON.stringify(data));
+  };
+
+  useEffect(() => {
+    const fetchEvents = async () => {
+      const { data } = await supabase
+        .from('bingo_events')
+        .select('name')
+        .eq('is_active', true);
+      if (data) setActiveEvents(data.map(e => e.name));
+    };
+
+    fetchEvents();
+
+    const channel = supabase
+      .channel('bingo-updates')
+      .on('postgres_changes', { event: 'UPDATE', table: 'bingo_events' }, fetchEvents)
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, []);
+
+  const triggerEvent = async () => {
+    if (!selectedEvent || selectedEvent === "Select an event...") return;
+
+    const { error } = await supabase
+      .from('bingo_events')
+      .update({ is_active: true })
+      .eq('name', selectedEvent);
+
+    if (!error) {
+      emailjs.send(
+        import.meta.env.VITE_EMAILJS_SERVICE_ID,
+        import.meta.env.VITE_EMAILJS_TEMPLATE_ID,
+        {
+          message: `🚨ALERT🚨: Mason just did "${selectedEvent}". Take a shot. 🍻`,
+          to_email: 'nrk5727@gmail.com'
+        },
+        import.meta.env.VITE_EMAILJS_PUBLIC_KEY
+      );
+      setSelectedEvent('');
+    }
+  };
+
+  if (!user) {
+    return (
+      <div className="joinOverlay">
+        <div className="joinCard">
+          <h1 className="joinTitle">MASON BINGO</h1>
+          <input
+            type="email"
+            placeholder="Enter Email to Play"
+            className="joinInput"
+            onChange={(e) => setEmailInput(e.target.value)}
+          />
+          <button onClick={handleJoin} className="joinButton">
+            JOIN GAME 🍻
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app">
+      <header className="header">
+        <h1 className="title">Mason Bingo</h1>
+        <p className="subtitle">Logged in: {user.email}</p>
+      </header>
+
+      <div className="gridWrap">
+        <div className="grid">
+          {user.card_layout.map((item, i) => {
+            const isMarked = activeEvents.includes(item) || item === "FREE SPACE";
+            return (
+              <div
+                key={i}
+                className={`cell ${isMarked ? 'cellMarked' : 'cellUnmarked'}`}
+              >
+                {item}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {ADMINS.includes(user.email) && (
+        <div className="adminPanel">
+          <label className="adminLabel">Admin: Trigger Mason Action</label>
+          <div className="adminRow">
+            <select
+              className="adminSelect"
+              value={selectedEvent}
+              onChange={(e) => setSelectedEvent(e.target.value)}
+            >
+              <option value="">Select an event...</option>
+              {[
+                "Diddy", "Woke", "I don’t know Jim", "Liberals", "When in Rome",
+                "I’m so drunk right now", "The Drunken Lean", "Drakeeeee",
+                "Money market mutual fund", "Saying IRA", "I’m on alcohol",
+                "Time to morb", "Gulp", "[Reference nobody gets]", "The thing about...",
+                "Walter", "I’m joking", "IT’S GETTING STICKY", "Latina Baddie",
+                "Epstein", "Charlie Kirky", "Les Wexner", "Jimmer", "Aloha"
+              ].sort().map(e => (
+                <option key={e} value={e}>{e}</option>
+              ))}
+            </select>
+
+            <button onClick={triggerEvent} className="adminSend">
+              Send 🚨
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
