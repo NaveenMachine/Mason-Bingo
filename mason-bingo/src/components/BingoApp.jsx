@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import emailjs from 'emailjs-com';
 import './BingoApp.css';
 
+// Initialize Supabase using environment variables
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
   import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -16,6 +17,7 @@ export default function BingoApp() {
   const [activeEvents, setActiveEvents] = useState([]);
   const [selectedEvent, setSelectedEvent] = useState('');
 
+  // Load existing session from local storage
   useEffect(() => {
     const savedUser = localStorage.getItem('bingo_user');
     if (savedUser) setUser(JSON.parse(savedUser));
@@ -25,19 +27,21 @@ export default function BingoApp() {
     if (!emailInput) return;
     const email = emailInput.toLowerCase().trim();
 
+    // Check if user already has a card
     let { data } = await supabase.from('user_cards').select('*').eq('email', email).single();
 
     if (!data) {
+      // Create a randomized 5x5 board
       const squares = [
-        "Diddy", "Woke", "I don’t know Jim", "Liberals", "When in Rome",
-        "I’m so drunk right now", "The Drunken Lean", "Drakeeeee",
-        "Money market mutual fund", "Saying IRA", "I’m on alcohol",
-        "Time to morb", "Gulp", "[Reference nobody gets]", "The thing about...",
-        "Walter", "I’m joking", "IT’S GETTING STICKY", "Latina Baddie",
-        "Epstein", "Charlie Kirky", "Les Wexner", "Jimmer", "Aloha"
+        '"Diddy"', '"Woke"', '"I don’t know Jim"', '"Liberals"', '"When in Rome"',
+        '"I’m so drunk right now"', "The Drunken Lean", '"Drakeeeee"',
+        '"Money market mutual fund"', "Saying IRA with hand gesticulation", '"I’m on alcohol"',
+        '"Time to morb"', '"Gulp"', '"[Reference nobody gets]"', '"The thing about..."',
+        '"Walter"', '"I’m joking"', '"IT’S GETTING STICKY"', '"Latina Baddie"',
+        'blah blah "Epstein"', "Charlie Charlie Kirky I just popped a pirky", 'blah blah "Les Wexner"', '"Jimmer"', '"Aloha"'
       ].sort(() => Math.random() - 0.5);
 
-      squares.splice(12, 0, "FREE SPACE");
+      squares.splice(12, 0, "FREE SPACE"); // Insert free space in the center
 
       const { data: newCard, error } = await supabase
         .from('user_cards')
@@ -54,6 +58,7 @@ export default function BingoApp() {
   };
 
   useEffect(() => {
+    // Initial fetch of active bingo events
     const fetchEvents = async () => {
       const { data } = await supabase
         .from('bingo_events')
@@ -64,6 +69,7 @@ export default function BingoApp() {
 
     fetchEvents();
 
+    // Subscribe to real-time database updates
     const channel = supabase
       .channel('bingo-updates')
       .on('postgres_changes', { event: 'UPDATE', table: 'bingo_events' }, fetchEvents)
@@ -75,25 +81,40 @@ export default function BingoApp() {
   const triggerEvent = async () => {
     if (!selectedEvent || selectedEvent === "Select an event...") return;
 
-    const { error } = await supabase
+    // 1. Mark the event as active in Supabase
+    const { error: updateError } = await supabase
       .from('bingo_events')
       .update({ is_active: true })
       .eq('name', selectedEvent);
 
-    if (!error) {
-      emailjs.send(
-        import.meta.env.VITE_EMAILJS_SERVICE_ID,
-        import.meta.env.VITE_EMAILJS_TEMPLATE_ID,
-        {
-          message: `🚨ALERT🚨: Mason just did "${selectedEvent}". Take a shot. 🍻`,
-          to_email: 'nrk5727@gmail.com'
-        },
-        import.meta.env.VITE_EMAILJS_PUBLIC_KEY
-      );
-      setSelectedEvent('');
+    if (!updateError) {
+      // 2. Fetch all registered player emails
+      const { data: players, error: fetchError } = await supabase
+        .from('user_cards')
+        .select('email');
+
+      if (!fetchError && players) {
+        // 3. Loop through and send an email alert to every player
+        players.forEach((player) => {
+          emailjs.send(
+            import.meta.env.VITE_EMAILJS_SERVICE_ID,
+            import.meta.env.VITE_EMAILJS_TEMPLATE_ID,
+            {
+              message: `Mason just did "${selectedEvent}". Take a shot. 🍻`,
+              to_email: player.email // Dynamically targets each player's email address
+            },
+            import.meta.env.VITE_EMAILJS_PUBLIC_KEY
+          );
+        });
+      }
+      
+      setSelectedEvent(''); // Reset the dropdown
+    } else {
+      console.error("Update error:", updateError);
     }
   };
 
+  // Auth/Join Screen
   if (!user) {
     return (
       <div className="joinOverlay">
@@ -113,11 +134,13 @@ export default function BingoApp() {
     );
   }
 
+  // Main Bingo Board UI
   return (
     <div className="app">
       <header className="header">
         <h1 className="title">Mason Bingo</h1>
         <p className="subtitle">Logged in: {user.email}</p>
+        <p>Spotted an event? Alert an admin (Naveen/Nolan) to mark the board!</p>
       </header>
 
       <div className="gridWrap">
@@ -136,6 +159,9 @@ export default function BingoApp() {
         </div>
       </div>
 
+      
+
+      {/* Admin Panel (Restricted to specific emails) */}
       {ADMINS.includes(user.email) && (
         <div className="adminPanel">
           <label className="adminLabel">Admin: Trigger Mason Action</label>
@@ -147,12 +173,12 @@ export default function BingoApp() {
             >
               <option value="">Select an event...</option>
               {[
-                "Diddy", "Woke", "I don’t know Jim", "Liberals", "When in Rome",
-                "I’m so drunk right now", "The Drunken Lean", "Drakeeeee",
-                "Money market mutual fund", "Saying IRA", "I’m on alcohol",
-                "Time to morb", "Gulp", "[Reference nobody gets]", "The thing about...",
-                "Walter", "I’m joking", "IT’S GETTING STICKY", "Latina Baddie",
-                "Epstein", "Charlie Kirky", "Les Wexner", "Jimmer", "Aloha"
+                '"Diddy"', '"Woke"', '"I don’t know Jim"', '"Liberals"', '"When in Rome"',
+  '"I’m so drunk right now"', "The Drunken Lean", '"Drakeeeee"',
+  '"Money market mutual fund"', "Saying IRA with hand gesticulation", '"I’m on alcohol"',
+  '"Time to morb"', '"Gulp"', '"[Reference nobody gets]"', '"The thing about..."',
+  '"Walter"', '"I’m joking"', '"IT’S GETTING STICKY"', '"Latina Baddie"',
+  'blah blah "Epstein"', "Charlie Charlie Kirky I just popped a pirky", 'blah blah "Les Wexner"', '"Jimmer"', '"Aloha"'
               ].sort().map(e => (
                 <option key={e} value={e}>{e}</option>
               ))}

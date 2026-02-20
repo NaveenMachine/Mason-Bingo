@@ -217,3 +217,7 @@ body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial
   transform: translateY(2px);
   border-bottom-width: 0px;
 }
+
+p {
+    color: white;
+}
